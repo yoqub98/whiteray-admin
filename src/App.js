@@ -4,10 +4,10 @@ import { Table, Button, Modal, Form, Input, InputNumber, Select, Upload, Space, 
 import { PlusOutlined, EyeOutlined, MoreOutlined, EditOutlined, DeleteOutlined, PauseCircleOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import ImgCrop from 'antd-img-crop';
 import { createClient } from '@supabase/supabase-js';
+import { supabase } from './supabaseClient';
 
-const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
-const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+
+
 
 const AdminPanel = () => {
   const [products, setProducts] = useState([]);
