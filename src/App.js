@@ -21,22 +21,30 @@ const AdminPanel = () => {
   const [grammList, setGrammList] = useState([{ value: '' }]);
   const [freeDeliveryOrder, setFreeDeliveryOrder] = useState(5);
 
-  const fetchProducts = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('product')
-        .select(`*, designs(*)`)
-        .neq('status', 'deleted')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setProducts(data || []);
-    } catch (error) {
-      message.error('Ошибка загрузки: ' + error.message);
-    } finally {
-      setLoading(false);
+const fetchProducts = async () => {
+  setLoading(true);
+  try {
+    const { data, error, status, statusText } = await supabase
+      .from('product')
+      .select(`*, designs(*)`)
+      .neq('status', 'deleted')
+      .order('created_at', { ascending: false });
+
+    console.log('Fetch response:', { data, error, status, statusText });
+
+    if (error) {
+      console.error('Supabase error details:', error);
+      throw error;
     }
-  };
+    
+    setProducts(data || []);
+  } catch (error) {
+    console.error('Full error:', error);
+    message.error('Ошибка загрузки: ' + error.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const fetchCategories = async () => {
     try {
