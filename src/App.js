@@ -256,99 +256,148 @@ const handleAddProduct = async (values) => {
 };
 
 // === HANDLE EDIT PRODUCT ===
-  const handleEditProduct = async (values) => {
-    console.log("🔍 handleEditProduct values:", values);
-    console.log("🔍 grammList:", grammList);
-    setSaving(true);
-    try {
-      if (!editingProduct) return;
+const handleEditProduct = async (values) => {
+  console.log("🔍 handleEditProduct values:", values);
+  setSaving(true);
+  try {
+    if (!editingProduct) {
+      console.warn("No editingProduct set");
+      setSaving(false);
+      return;
+    }
 
-      const productName = values.name;
+    const productName = values.name;
+    const baseID = editingProduct.id.substring(0, editingProduct.id.lastIndexOf('-'));
 
-      const imageUrls = {};
-      let hasNewImages = false;
-      for (let i = 0; i < fileList.length; i++) {
-        if (fileList[i].originFileObj) {
-          const baseID = editingProduct.id.substring(0, editingProduct.id.lastIndexOf('-'));
-          const url = await uploadImageToSupabase(
-            fileList[i].originFileObj,
-            baseID,
-            i + 1
-          );
-          imageUrls[`imageURL${i + 1}`] = url;
-          hasNewImages = true;
-        } else if (fileList[i].url) {
-          imageUrls[`imageURL${i + 1}`] = fileList[i].url;
-        }
+    // 1) Получаем все существующие продукты для baseID (id и gramm)
+    const { data: existingProducts = [], error: fetchError } = await supabase
+      .from("product")
+      .select("id, gramm")
+      .like("id", `${baseID}-%`);
+
+    if (fetchError) throw fetchError;
+
+    // map gramm -> id и вычисляем максимальный суффикс для генерации новых id
+    const existingMap = {};
+    let maxSuffix = 0;
+    existingProducts.forEach((p) => {
+      existingMap[Number(p.gramm)] = p.id;
+      const parts = String(p.id).split("-");
+      const suffix = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(suffix) && suffix > maxSuffix) maxSuffix = suffix;
+    });
+
+    // 2) Работа с изображениями — загрузка новых и сбор imageURL*
+    const imageUrls = {};
+    let hasNewImages = false;
+    for (let i = 0; i < fileList.length; i++) {
+      const f = fileList[i];
+      if (f.originFileObj) {
+        // используем твою функцию загрузки
+        const url = await uploadImageToSupabase(f.originFileObj, baseID, i + 1);
+        imageUrls[`imageURL${i + 1}`] = url;
+        hasNewImages = true;
+      } else if (f.url) {
+        imageUrls[`imageURL${i + 1}`] = f.url;
       }
+    }
 
-      if (hasNewImages || editingProduct.name !== productName) {
-        const { error: designError } = await supabase
-          .from("designs")
-          .update({ 
-            name: productName,
-            ...(hasNewImages && imageUrls)
-          })
-          .eq("id", editingProduct.designID);
+    // 3) Обновляем запись в designs если поменялось имя или есть новые картинки
+    if (hasNewImages || editingProduct.name !== productName) {
+      const { error: designError } = await supabase
+        .from("designs")
+        .update({
+          name: productName,
+          ...(hasNewImages ? imageUrls : {}),
+        })
+        .eq("id", editingProduct.designID);
 
-        if (designError) throw designError;
-      }
+      if (designError) throw designError;
+    }
 
-      const baseID = editingProduct.id.substring(0, editingProduct.id.lastIndexOf('-'));
-      console.log("🔄 Editing all products with base ID:", baseID);
+    // 4) Обновляем общие поля (name, packageID, description) у всех связанных продуктов
+    const updateData = {
+      name: productName,
+      packageID: values.packageID,
+      description: values.description !== undefined ? values.description : editingProduct.description,
+    };
 
-      const updateData = {
-        name: productName,
-        packageID: values.packageID,
-        description: values.description !== undefined ? values.description : editingProduct.description,
-      };
+    const { data: relatedProducts = [], error: relatedFetchError } = await supabase
+      .from("product")
+      .select("id")
+      .like("id", `${baseID}-%`);
 
-      const { data: relatedProducts, error: fetchError } = await supabase
+    if (relatedFetchError) throw relatedFetchError;
+
+    for (const prod of relatedProducts) {
+      const { error: updErr } = await supabase
         .from("product")
-        .select("id")
-        .like("id", `${baseID}-%`);
+        .update(updateData)
+        .eq("id", prod.id);
 
-      if (fetchError) throw fetchError;
+      if (updErr) throw updErr;
+    }
 
-      console.log("📦 Found related products:", relatedProducts.length);
-
-      for (const prod of relatedProducts) {
-        const { error: updateError } = await supabase
-          .from("product")
-          .update(updateData)
-          .eq("id", prod.id);
-
-        if (updateError) {
-          console.error("❌ Update error for", prod.id, updateError);
-          throw updateError;
-        }
-      }
-
-      if (grammList[0].price !== undefined && grammList[0].price !== null) {
-        console.log("🔄 Updating price:", grammList[0].price, "oldPrice:", grammList[0].oldPrice);
-        await supabase
+    // 5) Обновляем цены для существующих gramm и создаём новые продукты для новых gramm
+    let createdCount = 0;
+    for (const g of grammList) {
+      const grammNum = Number(g.gramm);
+      // если такой gramm уже был — обновим цену/oldPrice
+      if (existingMap[grammNum]) {
+        const { error: priceErr } = await supabase
           .from("product")
           .update({
-            price: parseFloat(grammList[0].price),
-            oldPrice: grammList[0].oldPrice ? parseFloat(grammList[0].oldPrice) : 0,
+            price: parseFloat(g.price),
+            oldPrice: g.oldPrice ? parseFloat(g.oldPrice) : 0,
           })
-          .eq("id", editingProduct.id);
-      }
+          .eq("id", existingMap[grammNum]);
 
-      message.success(`Обновлено ${relatedProducts.length} связанных продукт(ов)!`);
-      setAddModalVisible(false);
-      setEditingProduct(null);
-      form.resetFields();
-      setFileList([]);
-      setGrammList([{ gramm: "", price: "", oldPrice: "" }]);
-      fetchProducts();
-    } catch (err) {
-      console.error("❌ handleEditProduct error:", err);
-      message.error("Ошибка при обновлении: " + err.message);
-    } finally {
-      setSaving(false);
+        if (priceErr) throw priceErr;
+      } else {
+        // новый gramm — создаём новый продукт
+        if (g.gramm && g.price) {
+          maxSuffix++;
+          const productID = `${baseID}-${String(maxSuffix).padStart(3, "0")}`;
+
+          const { error: insertError } = await supabase.from("product").insert({
+            id: productID,
+            name: productName,
+            packageID: values.packageID,
+            gramm: grammNum,
+            designID: editingProduct.designID,
+            price: parseFloat(g.price),
+            oldPrice: g.oldPrice ? parseFloat(g.oldPrice) : 0,
+            description: values.description,
+            measure_unit_one: "коробка",
+            unit: "1000",
+            measure_unit_few: "коробки",
+            measure_unit_many: "коробок",
+            status: "active",
+          });
+
+          if (insertError) throw insertError;
+          createdCount++;
+        }
+      }
     }
-  };
+
+    message.success(`Обновлено ${relatedProducts.length} записей. Создано ${createdCount} новых вариантов.`);
+    // закрываем модалку (в твоём коде используется addModalVisible/ setAddModalVisible)
+    setAddModalVisible(false);
+    setEditingProduct(null);
+    form.resetFields();
+    setFileList([]);
+    setGrammList([{ gramm: "", price: "", oldPrice: "" }]);
+    await fetchProducts();
+  } catch (err) {
+    console.error("❌ handleEditProduct error:", err);
+    message.error("Ошибка при обновлении: " + (err?.message || err));
+  } finally {
+    setSaving(false);
+  }
+};
+
+
 
   const handlePauseProduct = async (product) => {
     try {
@@ -725,47 +774,69 @@ return (
       </Form.Item>
     )}
 
-    {editingProduct && (
-      <>
-        <Form.Item label="Вес (граммы)">
-          <InputNumber
-            value={grammList[0]?.gramm}
-            style={{ width: "100%" }}
-            size="large"
-            addonAfter="г"
-            disabled
-          />
-        </Form.Item>
-        <Form.Item label="Цена">
-          <InputNumber
-            value={grammList[0]?.price}
-            onChange={(val) => {
-              const newList = [...grammList];
-              newList[0].price = val;
-              setGrammList(newList);
-            }}
-            style={{ width: "100%" }}
-            size="large"
-            min={0}
-            addonAfter="сум"
-          />
-        </Form.Item>
-        <Form.Item label="Зачеркнутая цена (необязательно)">
-          <InputNumber
-            value={grammList[0]?.oldPrice}
-            onChange={(val) => {
-              const newList = [...grammList];
-              newList[0].oldPrice = val;
-              setGrammList(newList);
-            }}
-            style={{ width: "100%" }}
-            size="large"
-            min={0}
-            addonAfter="сум"
-          />
-        </Form.Item>
-      </>
-    )}
+  {editingProduct && (
+  <Form.Item label="Варианты веса и цены">
+    {grammList.map((g, idx) => (
+      <Space key={idx} align="end" style={{ display: "flex", marginBottom: 8 }}>
+        <InputNumber
+          value={g.gramm}
+          onChange={(val) => {
+            const newList = [...grammList];
+            newList[idx].gramm = val;
+            setGrammList(newList);
+          }}
+          style={{ width: "120px" }}
+          addonAfter="г"
+          disabled={!!editingProduct.id && g._existing} // 🔹 блокируем вес для существующих
+        />
+        <InputNumber
+          value={g.price}
+          onChange={(val) => {
+            const newList = [...grammList];
+            newList[idx].price = val;
+            setGrammList(newList);
+          }}
+          style={{ width: "150px" }}
+          addonAfter="сум"
+        />
+        <InputNumber
+          value={g.oldPrice}
+          onChange={(val) => {
+            const newList = [...grammList];
+            newList[idx].oldPrice = val;
+            setGrammList(newList);
+          }}
+          style={{ width: "150px" }}
+          addonAfter="сум"
+        />
+        <Button danger onClick={() => setGrammList(grammList.filter((_, i) => i !== idx))}>
+          Удалить
+        </Button>
+      </Space>
+    ))}
+
+ <Button
+  type="primary"
+  ghost
+  onClick={() =>
+    setGrammList([
+      ...grammList,
+      { gramm: "", price: "", oldPrice: "", _existing: false },
+    ])
+  }
+  style={{
+    display: "block",
+    width: "30%",
+height : "42px",
+ borderRadius: "18px", 
+    margin: "26px auto 0", // сверху отступ, автоцентрирование
+  }}
+>
+  + Добавить новый вариант
+</Button>
+  </Form.Item>
+)}
+
 
     <Form.Item name="description" label="Описание">
       <Input.TextArea placeholder="Описание продукта" rows={4} size="large" />
