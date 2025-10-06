@@ -25,7 +25,8 @@ import {
   EyeOutlined, 
   PauseOutlined, 
   EditOutlined, 
-  MoreOutlined 
+  MoreOutlined,
+  DeleteOutlined
 } from "@ant-design/icons";
 import ImgCrop from "antd-img-crop";
 import { supabase } from "./supabaseClient";
@@ -173,6 +174,7 @@ const handleAddProduct = async (values) => {
       setSaving(false);
       return;
     }
+
 
     // === GENERATE BASE ID EARLY ===
     const baseID = generateProductID(values.packageID, products);
@@ -416,6 +418,25 @@ const handleEditProduct = async (values) => {
     }
   };
 
+
+  // === HANDLE DELETE PRODUCT ===
+const handleDeleteProduct = async (product) => {
+  try {
+    const { error } = await supabase
+      .from("product")
+      .update({ status: "deleted" })
+      .eq("id", product.id);
+
+    if (error) throw error;
+
+    message.success("Продукт удален");
+    fetchProducts();
+  } catch (err) {
+    console.error("❌ handleDeleteProduct error:", err);
+    message.error("Ошибка при удалении: " + err.message);
+  }
+};
+
  const openEditModal = (product) => {
   setEditingProduct(product);
 
@@ -461,112 +482,36 @@ const handleEditProduct = async (values) => {
     setViewModalVisible(true);
   };
 
-  const getProductImages = (product) => {
-    const images = [];
-    for (let i = 1; i <= 5; i++) {
-      const imageUrl = product[`imageURL${i}`];
-      if (imageUrl) images.push(imageUrl);
-    }
-    return images;
-  };
 
-  const getActionMenu = (product) => (
-    <Menu
-      items={[
-        {
-          key: 'edit',
-          label: 'Редактировать',
-          icon: <EditOutlined />,
-          onClick: () => openEditModal(product),
-        },
-        {
-          key: 'pause',
-          label: 'Приостановить',
-          icon: <PauseOutlined />,
-          onClick: () => handlePauseProduct(product),
-        },
-      ]}
-    />
-  );
 
-  const columns = [
-    {
-      title: "Фото",
-      dataIndex: "imageURL1",
-      key: "image",
-      width: 80,
-      render: (url, record) => {
-        const firstImg = url || record.imageURL2 || record.imageURL3 || null;
-        return firstImg ? (
-          <div style={{ width: 60, height: 60, overflow: "hidden", borderRadius: 4 }}>
-            <Image src={firstImg} width={60} height={60} style={{ objectFit: "cover" }} preview={false} />
-          </div>
-        ) : "-";
+ const getActionMenu = (product) => (
+  <Menu
+    items={[
+      {
+        key: 'edit',
+        label: 'Редактировать',
+        icon: <EditOutlined />,
+        onClick: () => openEditModal(product),
       },
-    },
-    { title: "ID", dataIndex: "id", key: "id", width: 120 },
-    { title: "Название", dataIndex: "name", key: "name", width: 200, render: (name) => name || "-" },
-    {
-      title: "Категория",
-      dataIndex: "packageID",
-      key: "package",
-      width: 120,
-      render: (packageID) => {
-        const cat = categories.find((c) => c.id === packageID);
-        return cat ? cat.name : packageID;
+      {
+        key: 'pause',
+        label: 'Приостановить',
+        icon: <PauseOutlined />,
+        onClick: () => handlePauseProduct(product),
       },
-    },
-    {
-      title: "Вес",
-      dataIndex: "gramm",
-      key: "gramm",
-      width: 80,
-      render: (gramm) => `${gramm}г`,
-    },
-    {
-      title: "Цена",
-      dataIndex: "price",
-      key: "price",
-      width: 100,
-      render: (price, record) => (
-        <Space direction="vertical" size={0}>
-          <span style={{ fontWeight: "bold" }}>{price} сум</span>
-          {record.oldPrice && record.oldPrice > 0 && (
-            <span style={{ textDecoration: "line-through", color: "#999", fontSize: 12 }}>
-              {record.oldPrice} сум
-            </span>
-          )}
-        </Space>
-      ),
-    },
-    {
-      title: "Статус",
-      dataIndex: "status",
-      key: "status",
-      width: 100,
-      render: (status) => (
-        <Tag color={status === "active" ? "green" : status === "paused" ? "orange" : "red"}>
-          {status === "active" ? "Активен" : status === "paused" ? "Приостановлен" : "Удален"}
-        </Tag>
-      ),
-    },
-    {
-      title: "Действия",
-      key: "actions",
-      width: 120,
-      fixed: 'right',
-      render: (_, record) => (
-        <Space size="small">
-          <Tooltip title="Просмотреть детали">
-            <Button type="text" icon={<EyeOutlined />} onClick={() => viewProductDetails(record)} />
-          </Tooltip>
-          <Dropdown overlay={getActionMenu(record)} trigger={['click']}>
-            <Button type="text" icon={<MoreOutlined />} />
-          </Dropdown>
-        </Space>
-      ),
-    },
-  ];
+      // === ADD DELETE OPTION ===
+      {
+        key: 'delete',
+        label: 'Удалить',
+        icon: <DeleteOutlined />, // You'll need to import this
+        onClick: () => handleDeleteProduct(product),
+        danger: true, // This makes the text red
+      },
+    ]}
+  />
+);
+
+
 
   const uploadProps = {
     listType: "picture-card",
@@ -770,7 +715,76 @@ return (
 
     {!editingProduct && (
       <Form.Item label="Варианты веса и цены">
-        {/* ... блок добавления весов при создании ... */}
+        <Form.Item label="Варианты веса и цены">
+    {grammList.map((g, idx) => (
+      <Space key={idx} align="end" style={{ display: "flex", marginBottom: 8 }}>
+        <InputNumber
+          value={g.gramm}
+          onChange={(val) => {
+            const newList = [...grammList];
+            newList[idx].gramm = val;
+            setGrammList(newList);
+          }}
+          style={{ width: "120px" }}
+          placeholder="Вес"
+          addonAfter="г"
+          min={1}
+        />
+        <InputNumber
+          value={g.price}
+          onChange={(val) => {
+            const newList = [...grammList];
+            newList[idx].price = val;
+            setGrammList(newList);
+          }}
+          style={{ width: "150px" }}
+          placeholder="Цена"
+          addonAfter="сум"
+          min={0}
+        />
+        <InputNumber
+          value={g.oldPrice}
+          onChange={(val) => {
+            const newList = [...grammList];
+            newList[idx].oldPrice = val;
+            setGrammList(newList);
+          }}
+          style={{ width: "150px" }}
+          placeholder="Старая цена"
+          addonAfter="сум"
+          min={0}
+        />
+        {grammList.length > 1 && (
+          <Button 
+            danger 
+            onClick={() => setGrammList(grammList.filter((_, i) => i !== idx))}
+          >
+            Удалить
+          </Button>
+        )}
+      </Space>
+    ))}
+
+    <Button
+      type="primary"
+      ghost
+      onClick={() =>
+        setGrammList([
+          ...grammList,
+          { gramm: "", price: "", oldPrice: "" },
+        ])
+      }
+      style={{
+        display: "block",
+        width: "30%",
+        height: "42px",
+        borderRadius: "18px", 
+        margin: "26px auto 0",
+      }}
+    >
+      + Добавить новый вариант
+    </Button>
+  </Form.Item>
       </Form.Item>
     )}
 
