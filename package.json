@@ -10,8 +10,10 @@
     "@testing-library/user-event": "^13.5.0",
     "antd": "^5.27.4",
     "antd-img-crop": "^4.25.0",
+    "axios": "^1.13.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "react-router-dom": "^7.9.5",
     "react-scripts": "5.0.1",
     "web-vitals": "^2.1.4"
   },
