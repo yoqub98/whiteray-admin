@@ -1,4 +1,4 @@
-import telegramBotService from '../../services/telegramBot';
+import telegramBotService from '../services/telegramBot';
 
 export default async function handler(req, res) {
   // Set CORS headers
