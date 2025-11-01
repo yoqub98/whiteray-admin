@@ -59,6 +59,8 @@ const AppContent = () => {
             <Routes>
               <Route path="/" element={<ProductsPage />} />
               <Route path="/orders" element={<OrdersPage />} />
+              {/* Add a catch-all route for client-side routing */}
+              <Route path="*" element={<ProductsPage />} />
             </Routes>
           </Content>
         </Layout>
