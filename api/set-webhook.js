@@ -1,6 +1,6 @@
-import telegramBotService from '../services/telegramBot';
+const telegramBotService = require('./telegramBotService');
 
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -10,7 +10,6 @@ export default async function handler(req, res) {
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
   );
 
-  // Handle OPTIONS request for CORS
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
@@ -19,11 +18,9 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
       const { webhookUrl } = req.body;
-      
       if (!webhookUrl) {
         return res.status(400).json({ error: 'webhookUrl is required' });
       }
-
       const result = await telegramBotService.setWebhook(webhookUrl);
       res.status(200).json(result);
     } catch (error) {
@@ -38,16 +35,8 @@ export default async function handler(req, res) {
       console.error('❌ Get webhook info error:', error);
       res.status(500).json({ error: error.message });
     }
-  } else if (req.method === 'DELETE') {
-    try {
-      const result = await telegramBotService.deleteWebhook();
-      res.status(200).json(result);
-    } catch (error) {
-      console.error('❌ Delete webhook error:', error);
-      res.status(500).json({ error: error.message });
-    }
   } else {
-    res.setHeader('Allow', ['GET', 'POST', 'DELETE']);
+    res.setHeader('Allow', ['GET', 'POST']);
     res.status(405).json({ error: `Method ${req.method} not allowed` });
   }
-}
+};
