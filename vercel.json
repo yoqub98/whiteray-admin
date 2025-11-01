@@ -3,95 +3,21 @@
   "builds": [
     {
       "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "build"
-      }
+      "use": "@vercel/static-build"
     },
     {
       "src": "src/pages/api/**/*.js",
-      "use": "@vercel/node",
-      "config": {
-        "maxDuration": 30
-      }
+      "use": "@vercel/node"
     }
   ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/src/pages/api/$1"
-    },
-    {
-      "src": "/static/(.*)",
-      "dest": "/build/static/$1"
-    },
-    {
-      "src": "/asset-manifest.json",
-      "dest": "/build/asset-manifest.json"
-    },
-    {
-      "src": "/manifest.json",
-      "dest": "/build/manifest.json"
-    },
-    {
-      "src": "/favicon.ico",
-      "dest": "/build/favicon.ico"
-    },
-    {
-      "src": "/logo192.png",
-      "dest": "/build/logo192.png"
-    },
-    {
-      "src": "/logo512.png",
-      "dest": "/build/logo512.png"
-    },
-    {
-      "src": "/(.*\\.(js|css|map))",
-      "dest": "/build/static/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/build/index.html"
-    }
-  ],
-  "headers": [
+  "rewrites": [
     {
       "source": "/api/(.*)",
-      "headers": [
-        {
-          "key": "Access-Control-Allow-Credentials",
-          "value": "true"
-        },
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        },
-        {
-          "key": "Access-Control-Allow-Methods",
-          "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT"
-        },
-        {
-          "key": "Access-Control-Allow-Headers",
-          "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version"
-        }
-      ]
+      "destination": "/src/pages/api/$1"
     },
     {
       "source": "/(.*)",
-      "headers": [
-        {
-          "key": "X-Frame-Options",
-          "value": "DENY"
-        },
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
-        },
-        {
-          "key": "Referrer-Policy",
-          "value": "strict-origin-when-cross-origin"
-        }
-      ]
+      "destination": "/index.html"
     }
   ]
 }
