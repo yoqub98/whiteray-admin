@@ -47,34 +47,54 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
   const [sendingPaymentRequest, setSendingPaymentRequest] = useState(false);
   const [paymentScreenshot, setPaymentScreenshot] = useState(null);
   const [botConfigured, setBotConfigured] = useState(true);
+  const [parsedOrder, setParsedOrder] = useState(null);
 
   useEffect(() => {
     if (visible && order) {
-      fetchProductDetails();
+      // Parse order data if needed
+      const parsed = parseOrderData(order);
+      setParsedOrder(parsed);
+      
+      fetchProductDetails(parsed);
       fetchPaymentScreenshot();
       // Check if bot is configured
       setBotConfigured(telegramBotService.isConfigured());
     }
   }, [visible, order]);
 
-  const fetchProductDetails = async () => {
-    if (!order) return;
+  const parseOrderData = (orderData) => {
+    const parsed = { ...orderData };
+
+    // Parse address_location if it's a string
+    if (typeof parsed.address_location === "string") {
+      try {
+        parsed.address_location = JSON.parse(parsed.address_location);
+      } catch (e) {
+        console.warn("Failed to parse address_location:", e);
+        parsed.address_location = null;
+      }
+    }
+
+    // Parse items if it's a string
+    if (typeof parsed.items === "string") {
+      try {
+        parsed.items = JSON.parse(parsed.items);
+      } catch (e) {
+        console.warn("Failed to parse items:", e);
+        parsed.items = [];
+      }
+    }
+
+    return parsed;
+  };
+
+  const fetchProductDetails = async (orderData = parsedOrder) => {
+    if (!orderData) return;
 
     setLoading(true);
     try {
-      // Parse items - handle both string and array
-      let items = [];
-      if (typeof order.items === "string") {
-        try {
-          items = JSON.parse(order.items);
-        } catch (e) {
-          console.error("Failed to parse items:", e);
-          setLoading(false);
-          return;
-        }
-      } else if (Array.isArray(order.items)) {
-        items = order.items;
-      }
+      // Get items array
+      const items = Array.isArray(orderData.items) ? orderData.items : [];
 
       console.log("📦 Parsed items:", items);
 
@@ -159,7 +179,8 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
   };
 
   const handleSendPaymentRequest = async () => {
-    if (!order) return;
+    const currentOrder = parsedOrder || order;
+    if (!currentOrder) return;
 
     // Check if bot is configured
     if (!telegramBotService.isConfigured()) {
@@ -167,15 +188,16 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
       return;
     }
 
-    // Check if chat_id is available
-    if (!order.chat_id) {
+    // Check if chat_id is available (check for both null/undefined and ensure it's a valid number)
+    const chatId = currentOrder.chat_id;
+    if (!chatId || (typeof chatId === 'number' && isNaN(chatId))) {
       message.error("❌ Chat ID не найден для этого заказа");
       return;
     }
 
     setSendingPaymentRequest(true);
     try {
-      await telegramBotService.sendPaymentRequest(order);
+      await telegramBotService.sendPaymentRequest(currentOrder);
       message.success("✅ Запрос на оплату отправлен клиенту");
     } catch (error) {
       console.error("❌ Error sending payment request:", error);
@@ -217,6 +239,8 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
   };
 
   if (!order) return null;
+
+  const currentOrder = parsedOrder || order;
 
   const productColumns = [
     {
@@ -301,22 +325,26 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
   ];
 
   const hasValidLocation =
-    order.address_location &&
-    typeof order.address_location === "object" &&
-    order.address_location.lat &&
-    order.address_location.lon &&
-    !isNaN(order.address_location.lat) &&
-    !isNaN(order.address_location.lon);
+    currentOrder.address_location &&
+    typeof currentOrder.address_location === "object" &&
+    currentOrder.address_location.lat &&
+    currentOrder.address_location.lon &&
+    !isNaN(currentOrder.address_location.lat) &&
+    !isNaN(currentOrder.address_location.lon);
 
-  const hasAddressText = order.address_text && order.address_text.trim() !== "";
+  const hasAddressText = currentOrder.address_text && currentOrder.address_text.trim() !== "";
 
   const mapUrl = hasValidLocation
-    ? `https://yandex.ru/maps/?ll=${order.address_location.lon},${order.address_location.lat}&z=16&pt=${order.address_location.lon},${order.address_location.lat},pm2rdm&l=map`
+    ? `https://yandex.ru/maps/?ll=${currentOrder.address_location.lon},${currentOrder.address_location.lat}&z=16&pt=${currentOrder.address_location.lon},${currentOrder.address_location.lat},pm2rdm&l=map`
     : null;
 
   const coordinatesText = hasValidLocation
-    ? `${order.address_location.lat}, ${order.address_location.lon}`
+    ? `${currentOrder.address_location.lat}, ${currentOrder.address_location.lon}`
     : "";
+
+  // Check if button should be disabled
+  const chatId = currentOrder.chat_id;
+  const isButtonDisabled = !chatId || !botConfigured || (typeof chatId === 'number' && isNaN(chatId));
 
   return (
     <Modal
@@ -324,7 +352,7 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
         <Space style={{ paddingBottom: 8 }}>
           <EyeOutlined style={{ fontSize: 20 }} />
           <span style={{ fontSize: 20, fontWeight: 700 }}>
-            Детали заказа #{order.order_number}
+            Детали заказа #{currentOrder.order_number}
           </span>
         </Space>
       }
@@ -337,7 +365,7 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
           icon={<SendOutlined />}
           loading={sendingPaymentRequest}
           onClick={handleSendPaymentRequest}
-          disabled={!order.chat_id || !botConfigured}
+          disabled={isButtonDisabled}
         >
           Отправить запрос на оплату
         </Button>,
@@ -360,7 +388,7 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
       )}
 
       {/* Chat ID Warning */}
-      {!order.chat_id && (
+      {!currentOrder.chat_id && (
         <Alert
           message="Chat ID не найден"
           description="Не удалось отправить запрос на оплату: Chat ID клиента не указан в заказе."
@@ -381,15 +409,15 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
           >
             <Descriptions column={1} bordered size="small">
               <Descriptions.Item label="Имя">
-                <UserOutlined /> {order.client_name || "—"}
+                <UserOutlined /> {currentOrder.client_name || "—"}
               </Descriptions.Item>
               <Descriptions.Item label="Телефон">
-                <PhoneOutlined /> {order.phone || "—"}
+                <PhoneOutlined /> {currentOrder.phone || "—"}
               </Descriptions.Item>
               <Descriptions.Item label="Telegram">
-                @{order.tg_username || "—"}
+                @{currentOrder.tg_username || "—"}
               </Descriptions.Item>
-              <Descriptions.Item label="Chat ID">{order.chat_id || "—"}</Descriptions.Item>
+              <Descriptions.Item label="Chat ID">{currentOrder.chat_id || "—"}</Descriptions.Item>
             </Descriptions>
           </Card>
         </Col>
@@ -403,10 +431,10 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
             }}
           >
             <Descriptions column={1} bordered size="small">
-              <Descriptions.Item label="Номер заказа">{order.order_number}</Descriptions.Item>
+              <Descriptions.Item label="Номер заказа">{currentOrder.order_number}</Descriptions.Item>
               <Descriptions.Item label="Статус доставки">
                 {(() => {
-                  const config = getDeliveryStatusConfig(order.delivery_status);
+                  const config = getDeliveryStatusConfig(currentOrder.delivery_status);
                   return (
                     <Tag color={config.color} icon={config.icon}>
                       {config.text}
@@ -416,12 +444,12 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
               </Descriptions.Item>
               <Descriptions.Item label="Статус оплаты">
                 {(() => {
-                  const config = getPaymentStatusConfig(order.payment_status);
+                  const config = getPaymentStatusConfig(currentOrder.payment_status);
                   return <Badge status={config.color} text={config.text} />;
                 })()}
               </Descriptions.Item>
               <Descriptions.Item label="Способ оплаты">
-                {getPaymentMethodText(order.payment_method)}
+                {getPaymentMethodText(currentOrder.payment_method)}
               </Descriptions.Item>
             </Descriptions>
           </Card>
@@ -451,7 +479,7 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
         <Space direction="vertical" style={{ width: "100%" }}>
           {hasAddressText ? (
             <Text>
-              <EnvironmentOutlined /> {order.address_text}
+              <EnvironmentOutlined /> {currentOrder.address_text}
             </Text>
           ) : hasValidLocation ? (
             <Text copyable={{ text: coordinatesText }}>
@@ -488,25 +516,25 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
             <Text type="secondary">Количество позиций: {tableData.length}</Text>
             <Title level={4} style={{ margin: 0 }}>
               <DollarOutlined /> Итого:{" "}
-              {parseFloat(order.total_price || 0).toLocaleString("ru-RU")} сум
+              {parseFloat(currentOrder.total_price || 0).toLocaleString("ru-RU")} сум
             </Title>
           </Space>
         </div>
       </Card>
 
-      {order.notes && (
+      {currentOrder.notes && (
         <Card title="Примечания" style={{ marginBottom: 16 }}>
-          <Text>{order.notes}</Text>
+          <Text>{currentOrder.notes}</Text>
         </Card>
       )}
 
       <Card title="Временные метки">
         <Descriptions column={2} bordered size="small">
           <Descriptions.Item label="Создан">
-            {dayjs(order.created_at).format("DD.MM.YYYY HH:mm:ss")}
+            {dayjs(currentOrder.created_at).format("DD.MM.YYYY HH:mm:ss")}
           </Descriptions.Item>
           <Descriptions.Item label="Обновлен">
-            {dayjs(order.updated_at).format("DD.MM.YYYY HH:mm:ss")}
+            {dayjs(currentOrder.updated_at).format("DD.MM.YYYY HH:mm:ss")}
           </Descriptions.Item>
         </Descriptions>
       </Card>
