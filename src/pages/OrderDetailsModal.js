@@ -57,8 +57,16 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
       
       fetchProductDetails(parsed);
       fetchPaymentScreenshot();
+      
       // Check if bot is configured
       setBotConfigured(telegramBotService.isConfigured());
+
+      // Auto-refresh payment screenshot every 5 seconds
+      const interval = setInterval(() => {
+        fetchPaymentScreenshot();
+      }, 5000);
+
+      return () => clearInterval(interval);
     }
   }, [visible, order]);
 
@@ -167,12 +175,29 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
     try {
       const { data, error } = await supabase
         .from("orders")
-        .select("payment_screenshot")
+        .select("payment_screenshot, payment_status")
         .eq("id", order.id)
         .single();
 
       if (error) throw error;
-      setPaymentScreenshot(data?.payment_screenshot);
+      
+      // Update screenshot if it changed
+      if (data?.payment_screenshot !== paymentScreenshot) {
+        setPaymentScreenshot(data?.payment_screenshot);
+        
+        // Update parsed order payment status
+        if (parsedOrder && data?.payment_status !== parsedOrder.payment_status) {
+          setParsedOrder({
+            ...parsedOrder,
+            payment_status: data.payment_status,
+          });
+          
+          // Notify parent component about status update
+          if (onStatusUpdate) {
+            onStatusUpdate();
+          }
+        }
+      }
     } catch (error) {
       console.error("❌ Error fetching payment screenshot:", error);
     }
@@ -458,7 +483,16 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
 
       {/* Payment Screenshot Section */}
       {paymentScreenshot && (
-        <Card title="Скриншот оплаты" style={{ marginBottom: 16 }}>
+        <Card 
+          title={
+            <Space>
+              <PictureOutlined />
+              <span>Скриншот оплаты</span>
+              <Tag color="green">Получен</Tag>
+            </Space>
+          } 
+          style={{ marginBottom: 16 }}
+        >
           <Space direction="vertical">
             <Text>Клиент отправил скриншот подтверждения оплаты:</Text>
             <Image
@@ -471,6 +505,9 @@ const OrderDetailsModal = ({ visible, order, onClose, onStatusUpdate }) => {
                 </div>
               }
             />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Обновляется автоматически каждые 5 секунд
+            </Text>
           </Space>
         </Card>
       )}

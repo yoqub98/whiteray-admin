@@ -1,15 +1,69 @@
-import React, { useState } from "react";
-import { Layout, Menu } from "antd";
-import { ShoppingOutlined, FileTextOutlined } from "@ant-design/icons";
+import React, { useState, useEffect } from "react";
+import { Layout, Menu, Button, message, Modal, Space, Typography, Tag } from "antd";
+import { ShoppingOutlined, FileTextOutlined, ApiOutlined, CheckCircleOutlined, CloseCircleOutlined } from "@ant-design/icons";
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from "react-router-dom";
 import ProductsPage from "./pages/ProductsPage";
 import OrdersPage from "./pages/OrdersPage";
 
 const { Header, Content, Sider } = Layout;
+const { Text } = Typography;
 
 const AppContent = () => {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  const [webhookModalVisible, setWebhookModalVisible] = useState(false);
+  const [webhookInfo, setWebhookInfo] = useState(null);
+  const [settingWebhook, setSettingWebhook] = useState(false);
+
+  useEffect(() => {
+    // Check webhook status on app load
+    checkWebhookStatus();
+  }, []);
+
+  const checkWebhookStatus = async () => {
+    try {
+      const response = await fetch('/api/set-webhook');
+      const result = await response.json();
+      
+      if (result.ok && result.result) {
+        setWebhookInfo(result.result);
+      }
+    } catch (error) {
+      console.error('Error checking webhook:', error);
+    }
+  };
+
+  const setupWebhook = async () => {
+    setSettingWebhook(true);
+    try {
+      const domain = window.location.origin;
+      const webhookUrl = `${domain}/api/telegram-webhook`;
+
+      console.log('🔧 Setting up webhook:', webhookUrl);
+
+      const response = await fetch('/api/set-webhook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ webhookUrl }),
+      });
+
+      const result = await response.json();
+
+      if (result.ok) {
+        message.success('✅ Webhook настроен успешно!');
+        await checkWebhookStatus();
+      } else {
+        message.error('❌ Ошибка настройки webhook: ' + (result.description || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error setting webhook:', error);
+      message.error('❌ Ошибка: ' + error.message);
+    } finally {
+      setSettingWebhook(false);
+    }
+  };
 
   const menuItems = [
     {
@@ -24,12 +78,32 @@ const AppContent = () => {
     },
   ];
 
+  const isWebhookConfigured = webhookInfo && webhookInfo.url && webhookInfo.url.includes('/api/telegram-webhook');
+
   return (
     <Layout style={{ minHeight: "100vh" }}>
-      <Header style={{ display: "flex", alignItems: "center", padding: "0 24px" }}>
+      <Header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px" }}>
         <div style={{ color: "white", fontSize: "20px", fontWeight: "bold" }}>
           Admin Panel
         </div>
+        <Space>
+          {isWebhookConfigured ? (
+            <Tag icon={<CheckCircleOutlined />} color="success">
+              Webhook активен
+            </Tag>
+          ) : (
+            <Tag icon={<CloseCircleOutlined />} color="error">
+              Webhook не настроен
+            </Tag>
+          )}
+          <Button 
+            type="primary" 
+            icon={<ApiOutlined />}
+            onClick={() => setWebhookModalVisible(true)}
+          >
+            Настройки Webhook
+          </Button>
+        </Space>
       </Header>
       <Layout>
         <Sider
@@ -59,12 +133,107 @@ const AppContent = () => {
             <Routes>
               <Route path="/" element={<ProductsPage />} />
               <Route path="/orders" element={<OrdersPage />} />
-              {/* Add a catch-all route for client-side routing */}
               <Route path="*" element={<ProductsPage />} />
             </Routes>
           </Content>
         </Layout>
       </Layout>
+
+      {/* Webhook Setup Modal */}
+      <Modal
+        title={
+          <Space>
+            <ApiOutlined />
+            <span>Настройка Telegram Webhook</span>
+          </Space>
+        }
+        open={webhookModalVisible}
+        onCancel={() => setWebhookModalVisible(false)}
+        footer={[
+          <Button key="refresh" onClick={checkWebhookStatus}>
+            Обновить статус
+          </Button>,
+          <Button 
+            key="setup" 
+            type="primary" 
+            loading={settingWebhook}
+            onClick={setupWebhook}
+          >
+            Настроить Webhook
+          </Button>,
+          <Button key="close" onClick={() => setWebhookModalVisible(false)}>
+            Закрыть
+          </Button>,
+        ]}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="large">
+          <div>
+            <Text strong>Статус webhook:</Text>
+            <br />
+            {webhookInfo ? (
+              <>
+                <Text>URL: {webhookInfo.url || 'Не настроен'}</Text>
+                <br />
+                <Text type="secondary">
+                  Ожидающих обновлений: {webhookInfo.pending_update_count || 0}
+                </Text>
+                <br />
+                {webhookInfo.last_error_date && (
+                  <>
+                    <Text type="danger">
+                      Последняя ошибка: {webhookInfo.last_error_message}
+                    </Text>
+                    <br />
+                  </>
+                )}
+              </>
+            ) : (
+              <Text type="secondary">Загрузка...</Text>
+            )}
+          </div>
+
+          <div>
+            <Text strong>Что делает webhook?</Text>
+            <br />
+            <Text type="secondary">
+              Webhook позволяет вашему боту получать сообщения от пользователей в реальном времени.
+              Когда клиент отправляет скриншот оплаты боту, webhook автоматически обновит статус заказа.
+            </Text>
+          </div>
+
+          <div>
+            <Text strong>Текущий URL webhook:</Text>
+            <br />
+            <Text code>{window.location.origin}/api/telegram-webhook</Text>
+          </div>
+
+          {!isWebhookConfigured && (
+            <div style={{ 
+              padding: 12, 
+              background: '#fff7e6', 
+              border: '1px solid #ffd591',
+              borderRadius: 4 
+            }}>
+              <Text type="warning">
+                ⚠️ Webhook не настроен. Нажмите "Настроить Webhook" для активации приема скриншотов оплаты от клиентов.
+              </Text>
+            </div>
+          )}
+
+          {isWebhookConfigured && (
+            <div style={{ 
+              padding: 12, 
+              background: '#f6ffed', 
+              border: '1px solid #b7eb8f',
+              borderRadius: 4 
+            }}>
+              <Text type="success">
+                ✅ Webhook активен! Бот готов принимать скриншоты оплаты от клиентов.
+              </Text>
+            </div>
+          )}
+        </Space>
+      </Modal>
     </Layout>
   );
 };
