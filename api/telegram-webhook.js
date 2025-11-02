@@ -1,12 +1,35 @@
 import { createClient } from '@supabase/supabase-js';
 
+// In-memory pause state
+let webhookPaused = false;
+
 export default async function handler(req, res) {
+  // Handle GET request to check pause status
+  if (req.method === 'GET' && req.query.check_pause === 'true') {
+    return res.status(200).json({ ok: true, paused: webhookPaused });
+  }
+
+  // Handle POST request
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Check if this is a pause control request
+  if (req.body.set_pause === true) {
+    webhookPaused = req.body.paused;
+    console.log(`${webhookPaused ? '⏸️' : '▶️'} Webhook ${webhookPaused ? 'paused' : 'resumed'}`);
+    return res.status(200).json({ ok: true, paused: webhookPaused });
+  }
+
+  // Regular webhook processing
   try {
     console.log('📨 Webhook received:', JSON.stringify(req.body, null, 2));
+
+    // Check if webhook is paused
+    if (webhookPaused) {
+      console.log('⏸️ Webhook is paused, ignoring screenshot');
+      return res.status(200).json({ ok: true, message: 'Webhook paused' });
+    }
 
     const update = req.body;
     const message = update.message;

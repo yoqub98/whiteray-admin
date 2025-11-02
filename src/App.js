@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Layout, Menu, Button, message, Modal, Space, Typography, Tag } from "antd";
-import { ShoppingOutlined, FileTextOutlined, ApiOutlined, CheckCircleOutlined, CloseCircleOutlined } from "@ant-design/icons";
+import { Layout, Menu, Button, message, Modal, Space, Typography, Tag, Switch } from "antd";
+import { ShoppingOutlined, FileTextOutlined, ApiOutlined, CheckCircleOutlined, CloseCircleOutlined, PlayCircleOutlined, PauseCircleOutlined } from "@ant-design/icons";
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from "react-router-dom";
 import ProductsPage from "./pages/ProductsPage";
 import OrdersPage from "./pages/OrdersPage";
@@ -14,10 +14,11 @@ const AppContent = () => {
   const [webhookModalVisible, setWebhookModalVisible] = useState(false);
   const [webhookInfo, setWebhookInfo] = useState(null);
   const [settingWebhook, setSettingWebhook] = useState(false);
+  const [webhookPaused, setWebhookPaused] = useState(false);
 
   useEffect(() => {
-    // Check webhook status on app load
     checkWebhookStatus();
+    checkPauseStatus();
   }, []);
 
   const checkWebhookStatus = async () => {
@@ -30,6 +31,18 @@ const AppContent = () => {
       }
     } catch (error) {
       console.error('Error checking webhook:', error);
+    }
+  };
+
+  const checkPauseStatus = async () => {
+    try {
+      const response = await fetch('/api/telegram-webhook?check_pause=true');
+      const result = await response.json();
+      if (result.paused !== undefined) {
+        setWebhookPaused(result.paused);
+      }
+    } catch (error) {
+      console.error('Error checking pause status:', error);
     }
   };
 
@@ -65,6 +78,33 @@ const AppContent = () => {
     }
   };
 
+  const toggleWebhookPause = async (checked) => {
+    const newPausedState = !checked;
+    setWebhookPaused(newPausedState);
+    
+    try {
+      const response = await fetch('/api/telegram-webhook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ set_pause: true, paused: newPausedState }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.ok) {
+        message.success(checked ? '▶️ Webhook активирован' : '⏸️ Webhook приостановлен');
+      } else {
+        throw new Error('Failed to update pause state');
+      }
+    } catch (error) {
+      console.error('Error toggling webhook:', error);
+      message.error('❌ Ошибка изменения статуса webhook');
+      setWebhookPaused(!newPausedState); // Revert on error
+    }
+  };
+
   const menuItems = [
     {
       key: "/",
@@ -88,9 +128,15 @@ const AppContent = () => {
         </div>
         <Space>
           {isWebhookConfigured ? (
-            <Tag icon={<CheckCircleOutlined />} color="success">
-              Webhook активен
-            </Tag>
+            webhookPaused ? (
+              <Tag icon={<PauseCircleOutlined />} color="warning">
+                Webhook приостановлен
+              </Tag>
+            ) : (
+              <Tag icon={<CheckCircleOutlined />} color="success">
+                Webhook активен
+              </Tag>
+            )
           ) : (
             <Tag icon={<CloseCircleOutlined />} color="error">
               Webhook не настроен
@@ -150,7 +196,7 @@ const AppContent = () => {
         open={webhookModalVisible}
         onCancel={() => setWebhookModalVisible(false)}
         footer={[
-          <Button key="refresh" onClick={checkWebhookStatus}>
+          <Button key="refresh" onClick={() => { checkWebhookStatus(); checkPauseStatus(); }}>
             Обновить статус
           </Button>,
           <Button 
@@ -167,6 +213,31 @@ const AppContent = () => {
         ]}
       >
         <Space direction="vertical" style={{ width: '100%' }} size="large">
+          {isWebhookConfigured && (
+            <div style={{ 
+              padding: 12, 
+              background: '#f0f5ff', 
+              border: '1px solid #adc6ff',
+              borderRadius: 4,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <Space>
+                {webhookPaused ? <PauseCircleOutlined style={{ fontSize: 18 }} /> : <PlayCircleOutlined style={{ fontSize: 18 }} />}
+                <Text strong>
+                  {webhookPaused ? 'Webhook приостановлен' : 'Webhook работает'}
+                </Text>
+              </Space>
+              <Switch 
+                checked={!webhookPaused}
+                onChange={toggleWebhookPause}
+                checkedChildren="Вкл"
+                unCheckedChildren="Выкл"
+              />
+            </div>
+          )}
+
           <div>
             <Text strong>Статус webhook:</Text>
             <br />
@@ -202,6 +273,15 @@ const AppContent = () => {
           </div>
 
           <div>
+            <Text strong>Play/Pause функция:</Text>
+            <br />
+            <Text type="secondary">
+              Когда webhook приостановлен, бот перестает обрабатывать скриншоты оплаты от клиентов.
+              Используйте эту функцию для временной остановки приема платежей.
+            </Text>
+          </div>
+
+          <div>
             <Text strong>Текущий URL webhook:</Text>
             <br />
             <Text code>{window.location.origin}/api/telegram-webhook</Text>
@@ -220,7 +300,7 @@ const AppContent = () => {
             </div>
           )}
 
-          {isWebhookConfigured && (
+          {isWebhookConfigured && !webhookPaused && (
             <div style={{ 
               padding: 12, 
               background: '#f6ffed', 
@@ -229,6 +309,19 @@ const AppContent = () => {
             }}>
               <Text type="success">
                 ✅ Webhook активен! Бот готов принимать скриншоты оплаты от клиентов.
+              </Text>
+            </div>
+          )}
+
+          {isWebhookConfigured && webhookPaused && (
+            <div style={{ 
+              padding: 12, 
+              background: '#fff7e6', 
+              border: '1px solid #ffd591',
+              borderRadius: 4 
+            }}>
+              <Text type="warning">
+                ⏸️ Webhook приостановлен. Скриншоты оплаты не обрабатываются.
               </Text>
             </div>
           )}
