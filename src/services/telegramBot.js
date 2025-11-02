@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 
 class TelegramBotService {
   constructor() {
-    this.token = process.env.REACT_APP_TELEGRAM_BOT_TOKEN;
+    this.token = process.env.REACT_TELEGRAM_BOT_TOKEN;
     if (!this.token) {
       console.error('❌ Telegram Bot Token not found in environment variables');
     }
